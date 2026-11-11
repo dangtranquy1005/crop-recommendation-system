@@ -1,0 +1,24 @@
+
+# Xu ly du lieu
+numpy>=1.26,<3.0
+pandas>=2.2,<3.0
+
+# Machine Learning
+scikit-learn>=1.5,<2.0
+
+# Truc quan hoa du lieu
+matplotlib>=3.9,<4.0
+seaborn>=0.13,<1.0
+
+# Giao dien ung dung
+streamlit>=1.39,<2.0
+plotly>=5.24,<7.0
+
+# Luu va tai mo hinh
+joblib>=1.4,<2.0
+
+# Jupyter Notebook
+jupyterlab>=4.2,<5.0
+
+# Kiem thu
+pytest>=8.3,<10.0
