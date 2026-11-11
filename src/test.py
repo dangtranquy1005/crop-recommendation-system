@@ -8,13 +8,13 @@ model = load(BASE_DIR / "models" / "lda_model.joblib")
 
 # Mot mau du lieu moi
 sample = pd.DataFrame([{
-    "N": 90,
-    "P": 42,
+    "N": 70,
+    "P": 66,
     "K": 43,
-    "temperature": 25,
+    "temperature":30,
     "humidity": 80,
-    "ph": 6.5,
-    "rainfall": 200
+    "ph": 4.3,
+    "rainfall": 400
 }])[FEATURES]
 
 # Du doan loai cay

@@ -84,42 +84,42 @@ def evaluate_model(model, X, y, name):
 
 
 def main():
-    # 1. Doc du lieu
+    # Doc du lieu
     X_train, X_val, y_train, y_val = load_training_data()
 
     print("Train:", X_train.shape)
     print("Validation:", X_val.shape)
 
-    # 2. Tao mo hinh
+    # Tao mo hinh
     model = build_model()
 
-    # 3. Huan luyen LDA
+    # Huan luyen LDA
     model.fit(X_train, y_train)
 
     print("\nHuan luyen LDA thanh cong!")
 
-    # 4. Danh gia tren Train
+    # Danh gia tren Train
     train_acc, train_f1 = evaluate_model(
         model, X_train, y_train, "TRAIN"
     )
 
-    # 5. Danh gia tren Validation
+    # Danh gia tren Validation
     val_acc, val_f1 = evaluate_model(
         model, X_val, y_val, "VALIDATION"
     )
 
-    # 6. Kiem tra chenhlech train-validation
+    # Kiem tra chenhlech train-validation
     print("\nChenh lech Accuracy:",
           round(train_acc - val_acc, 4))
 
-    # 7. Bao cao tung loai cay
+    # Bao cao tung loai cay
     y_pred = model.predict(X_val)
     print("\nClassification Report:")
     print(classification_report(
         y_val, y_pred, zero_division=0
     ))
 
-    # 8. Luu mo hinh
+    # Luu mo hinh
     model_dir = BASE_DIR / "models"
     model_dir.mkdir(parents=True, exist_ok=True)
 
