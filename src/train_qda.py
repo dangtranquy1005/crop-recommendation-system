@@ -16,7 +16,6 @@ Cấu trúc:
 # 1. Import thư viện
 # ==============================================================
 import sys
-import warnings
 
 import joblib
 import matplotlib.pyplot as plt
@@ -25,8 +24,6 @@ import pandas as pd
 import seaborn as sns
 
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
-from sklearn.exceptions import ConvergenceWarning
-from sklearn.impute import SimpleImputer
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
     accuracy_score,
@@ -36,8 +33,7 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from feature_engineering import build_crop_pipeline
 
 # Import cấu hình từ config.py của dự án
 from config import (
@@ -46,14 +42,8 @@ from config import (
     PROCESSED_DATA_DIR,
 )
 
-# Bỏ qua cảnh báo không ảnh hưởng kết quả
-warnings.filterwarnings("ignore", category=ConvergenceWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
+# Load dữ liệu đã chia sẵn
 
-
-# ==============================================================
-# 2. Load dữ liệu đã chia sẵn
-# ==============================================================
 def load_training_data():
     """
     Đọc dữ liệu đã được chia bởi preprocessing.py.
@@ -86,9 +76,9 @@ def load_training_data():
     return X_train, X_val, y_train, y_val
 
 
-# ==============================================================
+
 # Kiểm tra chất lượng dữ liệu
-# ==============================================================
+
 def inspect_data(X_train, X_val, y_train, y_val):
     """In thông tin chất lượng dữ liệu đầu vào."""
     print("\n--- KIỂM TRA DỮ LIỆU ---")
@@ -110,14 +100,13 @@ def inspect_data(X_train, X_val, y_train, y_val):
     print("Phân bố nhãn (Train):\n", y_train.value_counts().to_string())
 
 
-# ==============================================================
-# 3. Xây dựng Pipeline QDA
-# ==============================================================
-def build_qda_model():
+#  Xây dựng Pipeline QDA
+
+def build_qda_model(use_engineered_features=True):
     """
     Tạo Pipeline gồm:
-      - SimpleImputer  : xử lý giá trị thiếu bằng trung vị
-      - StandardScaler : chuẩn hoá đặc trưng (giúp QDA ổn định hơn)
+      - CropFeatureEngineer : tạo đặc trưng bổ sung khi được bật
+      - ColumnTransformer : điền trung vị và chuẩn hoá các cột số
       - QDA            : mô hình phân loại
 
     Lưu ý về QDA:
@@ -126,26 +115,21 @@ def build_qda_model():
         đa cộng tuyến cao.
       - store_covariance=True : lưu ma trận hiệp phương sai để kiểm tra sau.
     """
-    model = Pipeline(
-        [
-            ("imputer",    SimpleImputer(strategy="median")),
-            ("scaler",     StandardScaler()),
-            (
-                "classifier",
-                QuadraticDiscriminantAnalysis(
-                    reg_param=0.1,         # regularisation chống suy biến
-                    store_covariance=True, # lưu Σ_k để debug nếu cần
-                    tol=1e-4,              # ngưỡng dừng
-                ),
-            ),
-        ]
+    # N + P + K is exactly collinear with the three original columns.
+    return build_crop_pipeline(
+        QuadraticDiscriminantAnalysis(
+            reg_param=0.1,
+            store_covariance=True,
+            tol=1e-4,
+        ),
+        use_engineered_features,
+        include_total_npk=False,
     )
-    return model
 
 
-# ==============================================================
-# 4. Đánh giá mô hình
-# ==============================================================
+
+#  Đánh giá mô hình
+
 def evaluate_model(model, X, y, name=""):
     """
     Đánh giá mô hình với đầy đủ chỉ số:
@@ -181,9 +165,9 @@ def evaluate_model(model, X, y, name=""):
     return metrics, y_pred
 
 
-# ==============================================================
-# 5. Trực quan hoá
-# ==============================================================
+
+# Trực quan hoá
+
 def plot_confusion_matrix(y_true, y_pred, classes, save_dir):
     """
     Vẽ Confusion Matrix bằng Seaborn Heatmap.
@@ -327,9 +311,9 @@ def plot_prediction_heatmap(y_true, y_pred, classes, save_dir):
     return out_path
 
 
-# ==============================================================
-# 6. Lưu mô hình
-# ==============================================================
+
+# Lưu mô hình
+
 def save_model(model, model_dir):
     """
     Lưu mô hình QDA bằng joblib.
@@ -353,9 +337,7 @@ def verify_model_load(model_path, X_sample):
     return loaded
 
 
-# ==============================================================
-# MAIN
-# ==============================================================
+
 def main():
     print("=" * 60)
     print("  HUẤN LUYỆN MÔ HÌNH QDA – CROP RECOMMENDATION SYSTEM")
@@ -367,9 +349,9 @@ def main():
     X_train, X_val, y_train, y_val = load_training_data()
     inspect_data(X_train, X_val, y_train, y_val)
 
-    # -----------------------------------------------------------
-    # Bước 2: Xây dựng & huấn luyện mô hình
-    # -----------------------------------------------------------
+    
+    #  Xây dựng & huấn luyện mô hình
+ 
     print("\n--- XÂY DỰNG VÀ HUẤN LUYỆN QDA ---")
     model = build_qda_model()
 
@@ -384,9 +366,8 @@ def main():
         model.fit(X_train, y_train)
         print("Huấn luyện QDA thành công với reg_param=0.5!")
 
-    # -----------------------------------------------------------
-    # Bước 3: Đánh giá mô hình
-    # -----------------------------------------------------------
+    # Đánh giá mô hình
+   
     train_metrics, _       = evaluate_model(model, X_train, y_train, "TRAIN")
     val_metrics,   y_pred  = evaluate_model(model, X_val,   y_val,   "VALIDATION")
 
@@ -398,9 +379,9 @@ def main():
     print("\n--- CLASSIFICATION REPORT (Validation) ---")
     print(classification_report(y_val, y_pred, zero_division=0))
 
-    # -----------------------------------------------------------
-    # Bước 4: Trực quan hoá
-    # -----------------------------------------------------------
+  
+    #  Trực quan hoá
+
     # Thư mục lưu ảnh
     figures_dir = BASE_DIR / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
@@ -412,16 +393,16 @@ def main():
     plot_prediction_heatmap(y_val, y_pred, classes, figures_dir)
     plot_metrics_bar(train_metrics, val_metrics, figures_dir)
 
-    # -----------------------------------------------------------
-    # Bước 5: Lưu mô hình
-    # -----------------------------------------------------------
+
+    #  Lưu mô hình
+
     model_dir  = BASE_DIR / "models"
     model_path = save_model(model, model_dir)
     verify_model_load(model_path, X_val.iloc[:5])
 
-    # -----------------------------------------------------------
+
     # Tóm tắt kết quả cuối
-    # -----------------------------------------------------------
+
     print("\n" + "=" * 60)
     print("  TÓM TẮT KẾT QUẢ CUỐI – QDA (Validation)")
     print("=" * 60)

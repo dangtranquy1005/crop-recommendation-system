@@ -2,9 +2,6 @@
 import pandas as pd
 from joblib import dump
 
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.metrics import (
     accuracy_score,
@@ -19,6 +16,7 @@ from config import (
     PROCESSED_DATA_DIR,
     FEATURES
 )
+from feature_engineering import build_crop_pipeline
 
 
 def load_training_data():
@@ -46,16 +44,10 @@ def load_training_data():
     return X_train, X_val, y_train, y_val
 
 
-def build_model():
+def build_model(use_engineered_features=True):
     """Tao Pipeline cho LDA."""
 
-    model = Pipeline([
-        ("imputer", SimpleImputer(strategy="median")),
-        ("scaler", StandardScaler()),
-        ("classifier", LinearDiscriminantAnalysis())
-    ])
-
-    return model
+    return build_crop_pipeline(LinearDiscriminantAnalysis(), use_engineered_features)
 
 
 def evaluate_model(model, X, y, name):

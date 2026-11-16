@@ -1,8 +1,6 @@
 from joblib import dump
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
+from feature_engineering import build_crop_pipeline
 import pandas as pd
 from config import BASE_DIR, RANDOM_STATE,PROCESSED_DATA_DIR, FEATURES
 from sklearn.metrics import (
@@ -66,21 +64,18 @@ def evaluate_model(model, X, y, name):
 
 
 
-def build_logistic_model():
+def build_logistic_model(use_engineered_features=True):
     """Tao Pipeline Logistic Regression."""
 
-    model = Pipeline([
-        ("imputer", SimpleImputer(strategy="median")),
-        ("scaler", StandardScaler()),
-        ("classifier", LogisticRegression(
+    return build_crop_pipeline(
+        LogisticRegression(
             max_iter=2000,
             C=0.1,
             solver="lbfgs",
             random_state=RANDOM_STATE
-        ))
-    ])
-
-    return model
+        ),
+        use_engineered_features,
+    )
 
 
 def main():
