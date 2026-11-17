@@ -5,13 +5,8 @@ DỰ ÁN GỢI Ý LOẠI CÂY TRỒNG DỰA TRÊN ĐIỀU KIỆN KHÍ HẬU VÀ 
 ---
 Đề tài của nhóm là xây dựng hệ thống gợi ý cây trồng dựa trên điều kiện đất và khí hậu. Dữ liệu đầu vào bao gồm 7 đặc trưng: N, P, K, nhiệt độ, độ ẩm, pH và lượng mưa. Đầu ra là loại cây trồng được mô hình dự đoán.
 
-Vì đầu ra là một trong nhiều loại cây trồng xác định nên đây là bài toán phân loại đa lớp. Nhóm sử dụng LDA, QDA và Logistic Regression để xây dựng và so sánh giữa 3 mô hình phân loại.
+Vì đầu ra là một trong nhiều loại cây trồng xác định nên đây là bài toán phân loại đa lớp. Nhóm so sánh bốn mô hình: Logistic Regression, LDA, QDA và Random Forest.
 
-
-- Tiến độ tuần đầu:
-    -nhóm đã thực hiện xử lý dữ liệu kiểm tra dữ liệu thiếu, dữ liệu trùng lặp và các giá trị bất thường. Sau đó, nhóm sử dụng Stratified Split để chia dữ liệu và duy trì tỷ lệ các loại cây giữa các tập.
-    - Triển khai thuật toán LDA giả định các đặc trưng trong mỗi lớp tuân theo phân phối Gaussian đa biến và các lớp có chung ma trận hiệp phương sai.Trong quá trình huấn luyện, LDA ước lượng vector trung bình của từng loại cây, ma trận hiệp phương sai chung và xác suất tiên nghiệm của các lớp.Từ những tham số đó, thuật toán xây dựng các hàm phân biệt tuyến tính. Khi nhận dữ liệu mới, mô hình tính điểm cho từng loại cây và chọn loại cây có điểm lớn nhất
-    - Triển khai Logistic Regression là thuật toán phân loại có giám sát. Đối với bài toán nhiều lớp, mô hình sử dụng hàm Softmax để ước lượng xác suất của từng loại cây.Trong quá trình huấn luyện, Logistic Regression tìm các hệ số tối ưu bằng cách giảm hàm mất mát Cross-Entropy, kết hợp Regularization để hạn chế Overfitting. Khi dự đoán, mô hình tính xác suất cho từng loại cây và chọn lớp có xác suất lớn nhất
 
 DATASET : https://www.kaggle.com/datasets/atharvaingle/crop-recommendation-dataset?
 
@@ -43,9 +38,24 @@ pH, pipeline cũng tính lại các đặc trưng phụ thuộc vào cột đó.
 python src/train_logistic_regression.py
 python src/trainlda.py
 python src/train_qda.py
+python src/train_random_forest.py
 ```
 
 Khi dự đoán, vẫn nhập 7 thông số gốc như trước.
+
+## Kiểm định chéo và tinh chỉnh siêu tham số
+
+```powershell
+python src/preprocessing.py
+python src/tune_models.py
+```
+
+`tune_models.py` gộp train và validation thành tập phát triển, rồi dùng cùng
+5 fold phân tầng để chạy `GridSearchCV` cho Logistic Regression, LDA, QDA và
+Random Forest. Mỗi ứng viên fit toàn bộ pipeline trong từng fold. Tập test
+được giữ riêng cho đánh giá cuối. Kết quả được xếp theo F1 macro trung bình và
+lưu tại `results/cv_tuning_summary.csv`, cùng độ lệch chuẩn, điểm từng fold và
+bộ tham số tốt nhất của từng mô hình.
 
 
 

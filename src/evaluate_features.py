@@ -7,6 +7,7 @@ from sklearn.metrics import accuracy_score, f1_score
 from config import FEATURES, RANDOM_STATE
 from train_logistic_regression import build_logistic_model
 from train_qda import build_qda_model, load_training_data
+from train_random_forest import build_random_forest_model
 from trainlda import build_model as build_lda_model
 
 
@@ -15,6 +16,7 @@ def fit_feature_variants(X_train, y_train):
         "Logistic Regression": build_logistic_model,
         "LDA": build_lda_model,
         "QDA": build_qda_model,
+        "Random Forest": build_random_forest_model,
     }
     for name, build in builders.items():
         baseline = build(use_engineered_features=False).fit(X_train, y_train)
