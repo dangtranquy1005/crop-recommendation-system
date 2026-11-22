@@ -1,5 +1,6 @@
-model,candidates,mean_cv_f1_macro,std_cv_f1_macro,fold_1_f1_macro,fold_2_f1_macro,fold_3_f1_macro,fold_4_f1_macro,fold_5_f1_macro,best_params
-Random Forest,12,0.9951774235865145,0.0020078386627716163,0.9973238882329791,0.9946338383838383,0.9973238882329791,0.9946477764659583,0.9919577266168176,"{""classifier__max_depth"": null, ""classifier__min_samples_leaf"": 1, ""classifier__n_estimators"": 100}"
-QDA,6,0.9908985730003181,0.003262209279860594,0.9947199265381084,0.9893537649219468,0.9946524064171123,0.9892881739472649,0.9864785931771578,"{""classifier__reg_param"": 0.01}"
-Logistic Regression,5,0.9812109555348998,0.004224791110950021,0.9893742621015348,0.9785729236598221,0.9812672176308541,0.9782391187805626,0.9786012555017257,"{""classifier__C"": 100.0}"
-LDA,6,0.9666767777347832,0.0053081197079080265,0.9710038394073013,0.9675330861897337,0.967929249325877,0.9704996392496393,0.9564180745013648,"{""classifier__shrinkage"": 0.01, ""classifier__solver"": ""lsqr""}"
+model,search_method,candidates_tested,mean_cv_f1_macro,std_cv_f1_macro,best_params
+Random Forest (RandomizedSearch),random,12,0.9951774235865145,0.0020078386627716163,"{""classifier__max_depth"": 25, ""classifier__max_features"": ""sqrt"", ""classifier__min_samples_leaf"": 1, ""classifier__min_samples_split"": 6, ""classifier__n_estimators"": 158}"
+QDA,grid,6,0.9908985730003181,0.003262209279860594,"{""classifier__reg_param"": 0.01}"
+Logistic Regression,grid,5,0.9806291170010683,0.0060797909446804205,"{""classifier__C"": 50.0}"
+k-NN,grid,30,0.9701589524613883,0.004640009901831375,"{""classifier__metric"": ""manhattan"", ""classifier__n_neighbors"": 5, ""classifier__weights"": ""distance""}"
+LDA,grid,6,0.9666767777347832,0.0053081197079080265,"{""classifier__shrinkage"": 0.01, ""classifier__solver"": ""lsqr""}"

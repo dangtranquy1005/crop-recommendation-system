@@ -1,91 +1,165 @@
-"""Tune the four crop classifiers using shared stratified CV folds."""
+"""
+==============================================================
+  tune_models.py – Tinh chỉnh siêu tham số (Hyperparameter Tuning)
+  kết hợp 5-Fold Stratified Cross Validation
+==============================================================
+Phương pháp:
+  - GridSearchCV cho các không gian tham số nhỏ (Logistic, LDA, QDA, k-NN)
+  - RandomizedSearchCV cho Random Forest (không gian tham số rộng)
+  - Đánh giá chéo 5-Fold (StratifiedKFold)
+  - Tự động refit và lưu mô hình tốt nhất đạt F1-macro cao nhất
+==============================================================
+"""
 
 import json
-
+import warnings
+import joblib
 import pandas as pd
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from scipy.stats import randint
+
+from sklearn.model_selection import (
+    GridSearchCV,
+    RandomizedSearchCV,
+    StratifiedKFold,
+)
 
 from config import BASE_DIR, RANDOM_STATE
 from train_logistic_regression import build_logistic_model
+from trainlda import build_model as build_lda_model
 from train_qda import build_qda_model, load_training_data
 from train_random_forest import build_random_forest_model
-from trainlda import build_model as build_lda_model
+from train_knn import build_knn_model
+
+warnings.filterwarnings("ignore")
 
 
 def main():
+    print("=" * 65)
+    print("  TỐI ƯU SIÊU THAM SỐ VỚI CROSS VALIDATION (5-FOLD)")
+    print("=" * 65)
+
     X_train, X_val, y_train, y_val = load_training_data()
     X_dev = pd.concat([X_train, X_val], ignore_index=True)
     y_dev = pd.concat([y_train, y_val], ignore_index=True)
+
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
     folds = list(cv.split(X_dev, y_dev))
 
-    searches = {
-        "Logistic Regression": (
-            build_logistic_model(),
-            {"classifier__C": [0.01, 0.1, 1.0, 10.0, 100.0]},
-        ),
-        "LDA": (
-            build_lda_model(),
-            [
+    # Cấu hình tuning: (model_pipeline, search_type, param_distribution_or_grid, n_iter)
+    tuning_configs = {
+        "Logistic Regression": {
+            "model": build_logistic_model(),
+            "type": "grid",
+            "params": {"classifier__C": [0.01, 0.1, 1.0, 10.0, 50.0]},
+        },
+        "LDA": {
+            "model": build_lda_model(),
+            "type": "grid",
+            "params": [
                 {"classifier__solver": ["svd"]},
-                {
-                    "classifier__solver": ["lsqr"],
-                    "classifier__shrinkage": [None, "auto", 0.01, 0.1, 0.5],
-                },
+                {"classifier__solver": ["lsqr"], "classifier__shrinkage": [None, "auto", 0.01, 0.1, 0.5]},
             ],
-        ),
-        "QDA": (
-            build_qda_model(),
-            # A CV training fold has a singular covariance with no regularization.
-            {"classifier__reg_param": [0.001, 0.01, 0.05, 0.1, 0.25, 0.5]},
-        ),
-        "Random Forest": (
-            build_random_forest_model(),
-            {
-                "classifier__n_estimators": [100, 200],
-                "classifier__max_depth": [None, 12, 20],
-                "classifier__min_samples_leaf": [1, 2],
+        },
+        "QDA": {
+            "model": build_qda_model(),
+            "type": "grid",
+            "params": {"classifier__reg_param": [0.001, 0.01, 0.05, 0.1, 0.25, 0.5]},
+        },
+        "k-NN": {
+            "model": build_knn_model(),
+            "type": "grid",
+            "params": {
+                "classifier__n_neighbors": [3, 5, 7, 9, 11],
+                "classifier__weights": ["uniform", "distance"],
+                "classifier__metric": ["euclidean", "manhattan", "minkowski"],
             },
-        ),
+        },
+        "Random Forest (RandomizedSearch)": {
+            "model": build_random_forest_model(),
+            "type": "random",
+            "n_iter": 12,
+            "params": {
+                "classifier__n_estimators": randint(100, 350),
+                "classifier__max_depth": [None, 10, 15, 20, 25],
+                "classifier__min_samples_split": [2, 4, 6],
+                "classifier__min_samples_leaf": [1, 2, 3],
+                "classifier__max_features": ["sqrt", "log2", None],
+            },
+        },
     }
 
-    print(f"{len(y_dev)} development samples | {cv.n_splits} folds | Macro F1")
+    print(f"Tổng mẫu tập phát triển: {len(y_dev)} | K-Fold: {cv.n_splits} | Chỉ số tối ưu: Macro F1\n")
     rows = []
-    for name, (model, param_grid) in searches.items():
-        print(f"Searching {name}...", flush=True)
-        search = GridSearchCV(
-            model,
-            param_grid,
-            scoring="f1_macro",
-            cv=folds,
-            refit=False,
-            error_score="raise",
-        ).fit(X_dev, y_dev)
+    best_overall_score = -1.0
+    best_overall_model = None
+    best_overall_name = ""
+
+    for name, cfg in tuning_configs.items():
+        print(f"🔍 Đang tối ưu {name} ({cfg['type'].upper()} SEARCH)...", flush=True)
+
+        if cfg["type"] == "grid":
+            search = GridSearchCV(
+                cfg["model"],
+                cfg["params"],
+                scoring="f1_macro",
+                cv=folds,
+                refit=True,
+                n_jobs=-1,
+                error_score="raise",
+            )
+        else:
+            search = RandomizedSearchCV(
+                cfg["model"],
+                cfg["params"],
+                n_iter=cfg.get("n_iter", 10),
+                scoring="f1_macro",
+                cv=folds,
+                refit=True,
+                n_jobs=-1,
+                random_state=RANDOM_STATE,
+                error_score="raise",
+            )
+
+        search.fit(X_dev, y_dev)
         index = search.best_index_
         metrics = search.cv_results_
+
+        score = search.best_score_
+        std = metrics["std_test_score"][index]
+
         rows.append({
             "model": name,
-            "candidates": len(metrics["params"]),
-            "mean_cv_f1_macro": search.best_score_,
-            "std_cv_f1_macro": metrics["std_test_score"][index],
-            **{
-                f"fold_{fold + 1}_f1_macro": metrics[f"split{fold}_test_score"][index]
-                for fold in range(cv.n_splits)
-            },
-            "best_params": json.dumps(search.best_params_, sort_keys=True),
+            "search_method": cfg["type"],
+            "candidates_tested": len(metrics["params"]),
+            "mean_cv_f1_macro": score,
+            "std_cv_f1_macro": std,
+            "best_params": json.dumps(search.best_params_, sort_keys=True, default=str),
         })
-        print(f"Best mean F1: {search.best_score_:.4f}", flush=True)
 
-    summary = pd.DataFrame(rows).sort_values(
-        "mean_cv_f1_macro", ascending=False, kind="stable"
-    )
+        print(f"  ↳ Điểm Macro F1 tốt nhất: {score:.4f} (±{std:.4f})")
+
+        if score > best_overall_score:
+            best_overall_score = score
+            best_overall_model = search.best_estimator_
+            best_overall_name = name
+
+    summary = pd.DataFrame(rows).sort_values("mean_cv_f1_macro", ascending=False, kind="stable")
     output = BASE_DIR / "results" / "cv_tuning_summary.csv"
     output.parent.mkdir(parents=True, exist_ok=True)
     summary.to_csv(output, index=False)
 
-    columns = ["model", "candidates", "mean_cv_f1_macro", "std_cv_f1_macro", "best_params"]
-    print("\n" + summary[columns].to_string(index=False, float_format="{:.4f}".format))
-    print(f"\nSaved CV summary: {output}")
+    print("\n" + "=" * 65)
+    print("  BẢNG TỔNG HỢP KẾT QUẢ TUNING (CV F1-MACRO)")
+    print("=" * 65)
+    cols = ["model", "search_method", "candidates_tested", "mean_cv_f1_macro", "std_cv_f1_macro"]
+    print(summary[cols].to_string(index=False, float_format="{:.4f}".format))
+    print(f"\n[Kết quả] Đã lưu bảng kết quả vào: {output}")
+
+    # Lưu best model tuned
+    best_model_path = BASE_DIR / "models" / "best_tuned_model.joblib"
+    joblib.dump(best_overall_model, best_model_path)
+    print(f"\n🏆 Mô hình tối ưu toàn diện nhất: {best_overall_name} (F1 = {best_overall_score:.4f})")
+    print(f"💾 Đã lưu mô hình tối ưu đã tune tại: {best_model_path}")
 
 
 if __name__ == "__main__":
