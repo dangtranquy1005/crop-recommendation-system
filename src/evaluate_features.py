@@ -4,24 +4,37 @@ import pandas as pd
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import accuracy_score, f1_score
 
-from config import FEATURES, RANDOM_STATE
+from config import RANDOM_STATE
 from train_logistic_regression import build_logistic_model
 from train_qda import build_qda_model, load_training_data
 from train_random_forest import build_random_forest_model
 from trainlda import build_model as build_lda_model
 
 
+MODEL_BUILDERS = {
+    "Logistic Regression": build_logistic_model,
+    "LDA": build_lda_model,
+    "QDA": build_qda_model,
+    "Random Forest": build_random_forest_model,
+}
+
+
 def fit_feature_variants(X_train, y_train):
-    builders = {
-        "Logistic Regression": build_logistic_model,
-        "LDA": build_lda_model,
-        "QDA": build_qda_model,
-        "Random Forest": build_random_forest_model,
-    }
-    for name, build in builders.items():
+    for name, build in MODEL_BUILDERS.items():
         baseline = build(use_engineered_features=False).fit(X_train, y_train)
         engineered = build(use_engineered_features=True).fit(X_train, y_train)
         yield name, baseline, engineered
+
+
+def feature_importance_table(model, X, y):
+    importance = permutation_importance(
+        model, X, y, scoring="f1_macro", n_repeats=10, random_state=RANDOM_STATE,
+    )
+    return pd.DataFrame({
+        "feature": X.columns,
+        "mean_f1_drop": importance.importances_mean,
+        "std_f1_drop": importance.importances_std,
+    }).sort_values("mean_f1_drop", ascending=False)
 
 
 def main():
@@ -40,16 +53,7 @@ def main():
                 "Macro F1": f1_score(y_val, predictions, average="macro"),
             })
 
-        importance = permutation_importance(
-            engineered, X_val, y_val, scoring="f1_macro",
-            n_repeats=10, random_state=RANDOM_STATE,
-        )
-        importance_rows.append(pd.DataFrame({
-            "Model": name,
-            "Input": FEATURES,
-            "Mean F1 drop": importance.importances_mean,
-            "Std": importance.importances_std,
-        }).sort_values("Mean F1 drop", ascending=False))
+        importance_rows.append(feature_importance_table(engineered, X_val, y_val).assign(model=name))
 
     print("\nValidation metrics")
     print(pd.DataFrame(results).to_string(index=False, float_format="{:.4f}".format))

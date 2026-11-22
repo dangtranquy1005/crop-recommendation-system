@@ -1,0 +1,12 @@
+model,actual_crop,predicted_crop,count
+LDA,blackgram,lentil,3
+LDA,lentil,blackgram,2
+LDA,maize,cotton,2
+LDA,rice,jute,2
+Logistic Regression,rice,jute,2
+QDA,rice,jute,2
+LDA,pigeonpeas,blackgram,1
+LDA,pigeonpeas,kidneybeans,1
+Logistic Regression,maize,cotton,1
+QDA,maize,cotton,1
+Random Forest,rice,jute,1

@@ -57,6 +57,26 @@ Random Forest. Mỗi ứng viên fit toàn bộ pipeline trong từng fold. Tậ
 lưu tại `results/cv_tuning_summary.csv`, cùng độ lệch chuẩn, điểm từng fold và
 bộ tham số tốt nhất của từng mô hình.
 
+## Đánh giá cuối trên tập test
+
+```powershell
+python src/compare_models.py
+```
+
+Script đọc tham số đã chốt trong `results/cv_tuning_summary.csv`, huấn luyện
+lại bốn pipeline trên toàn bộ tập phát triển và đánh giá trên tập test.
+Mô hình được chọn theo F1 macro của CV. ROC-AUC đa lớp dùng xác suất dự đoán,
+tính theo one-vs-rest và lấy trung bình macro.
+
+- `results/final_test_metrics.csv` lưu các chỉ số của bốn mô hình.
+- `results/final_confusion_pairs.csv` lưu từng cặp nhầm theo chiều nhãn thực → nhãn dự đoán.
+- `results/final_permutation_importance.csv` lưu mức giảm F1 macro khi xáo
+  trộn từng cột gốc, lặp 10 lần. `validation_reference` dùng mô hình mặc định
+  huấn luyện trên train. `test_tuned` dùng cấu hình đã chốt và fit lại trên
+  tập phát triển.
+- `figures/final_confusion_matrices*.png` và `figures/final_test_metrics.png`
+  chứa ma trận nhầm lẫn và biểu đồ so sánh cho báo cáo.
+
 
 
 -  cài đặt các thư viện và cấu hình cần thiết ở file requirements :

@@ -1,282 +1,153 @@
-"""
-==============================================================
-  compare_models.py – So sánh 3 mô hình bằng Confusion Matrix
-  - Logistic Regression
-  - LDA (Linear Discriminant Analysis)
-  - QDA (Quadratic Discriminant Analysis)
-==============================================================
-"""
+"""Refit CV-selected configurations and evaluate them on the held-out test split."""
 
-import joblib
+import json
+
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import numpy as np
 import pandas as pd
 import seaborn as sns
-
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
     f1_score,
     precision_score,
     recall_score,
+    roc_auc_score,
 )
 
-from config import BASE_DIR, PROCESSED_DATA_DIR, FEATURES
+from config import BASE_DIR, FEATURES, PROCESSED_DATA_DIR, TARGET
+from evaluate_features import MODEL_BUILDERS, feature_importance_table
+from train_qda import load_training_data
 
-# ==============================================================
-# Cấu hình các mô hình
-# ==============================================================
-MODELS = {
-    "Logistic Regression": BASE_DIR / "models" / "logistic_model.joblib",
-    "LDA":                 BASE_DIR / "models" / "lda_model.joblib",
-    "QDA":                 BASE_DIR / "models" / "qda_model.pkl",
+RESULTS_DIR = BASE_DIR / "results"
+FIGURES_DIR = BASE_DIR / "figures"
+METRICS = {
+    "accuracy": "Accuracy",
+    "precision_macro": "Precision macro",
+    "recall_macro": "Recall macro",
+    "f1_macro": "F1 macro",
+    "roc_auc_ovr_macro": "ROC-AUC OVR macro",
 }
 
-FIGURES_DIR = BASE_DIR / "figures"
-FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 
-
-# ==============================================================
-# Load dữ liệu Test
-# ==============================================================
-def load_test_data():
-    X_test = pd.read_csv(PROCESSED_DATA_DIR / "X_test.csv")[FEATURES]
-    y_test = pd.read_csv(PROCESSED_DATA_DIR / "y_test.csv")["label"]
-    print(f"Tập Test: {X_test.shape[0]} mẫu, {y_test.nunique()} lớp\n")
-    return X_test, y_test
-
-
-# ==============================================================
-# Tính toán chỉ số đánh giá
-# ==============================================================
-def compute_metrics(model, X, y):
-    y_pred = model.predict(X)
+def compute_metrics(y, predictions, probabilities, classes):
     return {
-        "y_pred":             y_pred,
-        "accuracy":           accuracy_score(y, y_pred),
-        "precision_macro":    precision_score(y, y_pred, average="macro",    zero_division=0),
-        "precision_weighted": precision_score(y, y_pred, average="weighted", zero_division=0),
-        "recall_macro":       recall_score(y, y_pred, average="macro",    zero_division=0),
-        "recall_weighted":    recall_score(y, y_pred, average="weighted", zero_division=0),
-        "f1_macro":           f1_score(y, y_pred, average="macro",    zero_division=0),
-        "f1_weighted":        f1_score(y, y_pred, average="weighted", zero_division=0),
+        "accuracy": accuracy_score(y, predictions),
+        "precision_macro": precision_score(y, predictions, average="macro", zero_division=0),
+        "recall_macro": recall_score(y, predictions, average="macro", zero_division=0),
+        "f1_macro": f1_score(y, predictions, average="macro", zero_division=0),
+        "roc_auc_ovr_macro": roc_auc_score(
+            y, probabilities, labels=classes, multi_class="ovr", average="macro"
+        ),
     }
 
 
-# ==============================================================
-# Biểu đồ 1: 3 Confusion Matrix xếp cạnh nhau
-# ==============================================================
-def plot_confusion_matrices(results, classes, y_test):
-    n_models = len(results)
-    fig, axes = plt.subplots(1, n_models, figsize=(22, 8))
-    fig.suptitle(
-        "So Sánh Confusion Matrix – 3 Mô Hình (Tập Test)",
-        fontsize=16, fontweight="bold", y=1.01
-    )
+def plot_confusion_matrices(matrices, classes, *, normalize=False):
+    fig, axes = plt.subplots(2, 2, figsize=(18, 15), layout="constrained")
+    description = "Row-normalized (%)" if normalize else "Counts"
+    fig.suptitle(f"Test confusion matrices | {description}", fontsize=17)
 
-    cmap_list = ["Blues", "Greens", "Oranges"]
-
-    for ax, (model_name, res), cmap in zip(axes, results.items(), cmap_list):
-        cm = confusion_matrix(y_test, res["y_pred"], labels=classes)
-        acc = res["accuracy"]
-
+    for ax, (name, matrix) in zip(axes.flat, matrices.items()):
+        values = matrix
+        if normalize:
+            support = matrix.sum(axis=1, keepdims=True)
+            values = 100 * matrix / np.maximum(support, 1)
+        annotations = np.where(matrix > 0, values.round().astype(int).astype(str), "")
         sns.heatmap(
-            cm,
-            annot=True,
-            fmt="d",
-            cmap=cmap,
-            xticklabels=classes,
-            yticklabels=classes,
-            linewidths=0.4,
-            linecolor="white",
-            cbar=True,
-            ax=ax,
+            values, annot=annotations, fmt="", cmap="Blues", square=True, vmin=0,
+            vmax=100 if normalize else None, xticklabels=classes, yticklabels=classes,
+            annot_kws={"fontsize": 7}, ax=ax,
         )
-        ax.set_title(
-            f"{model_name}\nAccuracy: {acc:.4f} ({acc*100:.2f}%)",
-            fontsize=12, fontweight="bold", pad=10
-        )
-        ax.set_xlabel("Nhãn Dự Đoán", fontsize=10)
-        ax.set_ylabel("Nhãn Thực Tế", fontsize=10)
-        ax.tick_params(axis="x", rotation=45, labelsize=7.5)
-        ax.tick_params(axis="y", rotation=0,  labelsize=7.5)
+        ax.set(title=name, xlabel="Predicted crop", ylabel="Actual crop")
+        ax.tick_params(axis="x", labelrotation=60, labelsize=8)
+        ax.tick_params(axis="y", labelrotation=0, labelsize=8)
 
-    plt.tight_layout()
-    out = FIGURES_DIR / "compare_confusion_matrix_3models.png"
-    fig.savefig(out, dpi=150, bbox_inches="tight")
+    suffix = "_normalized" if normalize else ""
+    fig.savefig(FIGURES_DIR / f"final_confusion_matrices{suffix}.png", dpi=150)
     plt.close(fig)
-    print(f"[Biểu đồ] Confusion Matrix (3 mô hình) → {out}")
 
 
-# ==============================================================
-# Biểu đồ 2: Confusion Matrix chuẩn hoá (% theo hàng)
-# ==============================================================
-def plot_normalized_confusion_matrices(results, classes, y_test):
-    n_models = len(results)
-    fig, axes = plt.subplots(1, n_models, figsize=(22, 8))
-    fig.suptitle(
-        "Confusion Matrix Chuẩn Hoá (%) – 3 Mô Hình (Tập Test)",
-        fontsize=16, fontweight="bold", y=1.01
-    )
-
-    cmap_list = ["Blues", "Greens", "Oranges"]
-
-    for ax, (model_name, res), cmap in zip(axes, results.items(), cmap_list):
-        cm = confusion_matrix(y_test, res["y_pred"], labels=classes).astype(float)
-        row_sums = cm.sum(axis=1, keepdims=True)
-        row_sums[row_sums == 0] = 1
-        cm_norm = cm / row_sums
-
-        sns.heatmap(
-            cm_norm,
-            annot=True,
-            fmt=".2f",
-            cmap=cmap,
-            xticklabels=classes,
-            yticklabels=classes,
-            linewidths=0.4,
-            linecolor="white",
-            vmin=0, vmax=1,
-            cbar=True,
-            ax=ax,
-        )
-        ax.set_title(
-            f"{model_name}\nAccuracy: {res['accuracy']*100:.2f}%",
-            fontsize=12, fontweight="bold", pad=10
-        )
-        ax.set_xlabel("Nhãn Dự Đoán", fontsize=10)
-        ax.set_ylabel("Nhãn Thực Tế", fontsize=10)
-        ax.tick_params(axis="x", rotation=45, labelsize=7.5)
-        ax.tick_params(axis="y", rotation=0,  labelsize=7.5)
-
-    plt.tight_layout()
-    out = FIGURES_DIR / "compare_confusion_matrix_normalized.png"
-    fig.savefig(out, dpi=150, bbox_inches="tight")
+def plot_metrics(summary):
+    scores = summary.set_index("model")[list(METRICS)].rename(columns=METRICS)
+    fig, ax = plt.subplots(figsize=(11, 4), layout="constrained")
+    sns.heatmap(scores, annot=True, fmt=".4f", cmap="Blues", vmax=1, ax=ax)
+    ax.set(title="Test metrics by model", xlabel="", ylabel="")
+    ax.tick_params(axis="y", labelrotation=0)
+    fig.savefig(FIGURES_DIR / "final_test_metrics.png", dpi=150)
     plt.close(fig)
-    print(f"[Biểu đồ] Confusion Matrix chuẩn hoá     → {out}")
 
 
-# ==============================================================
-# Biểu đồ 3: So sánh tất cả chỉ số (grouped bar chart)
-# ==============================================================
-def plot_metrics_comparison(results):
-    model_names = list(results.keys())
-    metric_keys = [
-        ("accuracy",           "Accuracy"),
-        ("precision_macro",    "Precision\n(macro)"),
-        ("precision_weighted", "Precision\n(weighted)"),
-        ("recall_macro",       "Recall\n(macro)"),
-        ("recall_weighted",    "Recall\n(weighted)"),
-        ("f1_macro",           "F1\n(macro)"),
-        ("f1_weighted",        "F1\n(weighted)"),
-    ]
-
-    keys   = [k for k, _ in metric_keys]
-    labels = [l for _, l in metric_keys]
-
-    n_metrics = len(keys)
-    n_models  = len(model_names)
-    x = np.arange(n_metrics)
-    width = 0.22
-    colors = ["#4C72B0", "#55A868", "#DD8452"]
-
-    fig, ax = plt.subplots(figsize=(15, 6))
-
-    for i, (name, color) in enumerate(zip(model_names, colors)):
-        vals = [results[name][k] for k in keys]
-        offset = (i - n_models / 2 + 0.5) * width
-        bars = ax.bar(x + offset, vals, width, label=name, color=color, alpha=0.88)
-        for bar in bars:
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + 0.004,
-                f"{bar.get_height():.3f}",
-                ha="center", va="bottom", fontsize=7.5, rotation=0
-            )
-
-    ax.set_title("So Sánh Các Chỉ Số Đánh Giá – 3 Mô Hình (Tập Test)",
-                 fontsize=14, fontweight="bold")
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, fontsize=10)
-    ax.set_ylim(0.80, 1.07)
-    ax.set_ylabel("Điểm số", fontsize=11)
-    ax.legend(fontsize=11)
-    ax.grid(axis="y", linestyle="--", alpha=0.5)
-    plt.tight_layout()
-
-    out = FIGURES_DIR / "compare_metrics_3models.png"
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"[Biểu đồ] So sánh chỉ số (bar chart)      → {out}")
-
-
-# ==============================================================
-# In bảng tổng kết
-# ==============================================================
-def print_summary_table(results):
-    print("\n" + "=" * 72)
-    print("  BẢNG SO SÁNH 3 MÔ HÌNH – TẬP TEST")
-    print("=" * 72)
-    header = f"{'Mô hình':<24} {'Accuracy':>9} {'Prec(M)':>9} {'Rec(M)':>8} {'F1(M)':>8} {'F1(W)':>8}"
-    print(header)
-    print("-" * 72)
-    for name, res in results.items():
-        print(
-            f"{name:<24} "
-            f"{res['accuracy']:>9.4f} "
-            f"{res['precision_macro']:>9.4f} "
-            f"{res['recall_macro']:>8.4f} "
-            f"{res['f1_macro']:>8.4f} "
-            f"{res['f1_weighted']:>8.4f}"
-        )
-    print("=" * 72)
-
-    # Mô hình tốt nhất theo Accuracy
-    best = max(results, key=lambda k: results[k]["accuracy"])
-    print(f"\n🏆 Mô hình tốt nhất (Accuracy): {best} "
-          f"({results[best]['accuracy']*100:.2f}%)")
-
-
-# ==============================================================
-# MAIN
-# ==============================================================
 def main():
-    print("=" * 60)
-    print("  SO SÁNH 3 MÔ HÌNH – CONFUSION MATRIX")
-    print("=" * 60)
+    cv_summary = pd.read_csv(RESULTS_DIR / "cv_tuning_summary.csv")
+    if len(cv_summary) != len(MODEL_BUILDERS) or set(cv_summary["model"]) != set(MODEL_BUILDERS):
+        raise ValueError("The CV summary must contain all four models. Run src/tune_models.py.")
+    cv_summary = cv_summary.sort_values("mean_cv_f1_macro", ascending=False, kind="stable")
+    winner = cv_summary.iloc[0]["model"]
 
-    # Load tập Test
-    X_test, y_test = load_test_data()
-    classes = sorted(y_test.unique())
+    X_train, X_val, y_train, y_val = load_training_data()
+    X_dev = pd.concat([X_train, X_val], ignore_index=True)
+    y_dev = pd.concat([y_train, y_val], ignore_index=True)
+    X_test = pd.read_csv(PROCESSED_DATA_DIR / "X_test.csv")[FEATURES]
+    y_test = pd.read_csv(PROCESSED_DATA_DIR / "y_test.csv")[TARGET]
+    classes = np.unique(y_dev)
 
-    # Load và đánh giá từng mô hình
-    results = {}
-    for model_name, model_path in MODELS.items():
-        if not model_path.exists():
-            print(f"⚠️  Không tìm thấy: {model_path} – bỏ qua {model_name}")
-            continue
-        model = joblib.load(model_path)
-        results[model_name] = compute_metrics(model, X_test, y_test)
-        print(f"✅ Đã đánh giá: {model_name}  "
-              f"(Accuracy = {results[model_name]['accuracy']:.4f})")
+    rows = []
+    matrices = {}
+    errors = []
+    for row in cv_summary.itertuples(index=False):
+        model = MODEL_BUILDERS[row.model]().set_params(**json.loads(row.best_params))
+        model.fit(X_dev, y_dev)
+        predictions = model.predict(X_test)
+        scores = compute_metrics(y_test, predictions, model.predict_proba(X_test), model.classes_)
+        rows.append({
+            "model": row.model,
+            "selected_by_cv": row.model == winner,
+            "mean_cv_f1_macro": row.mean_cv_f1_macro,
+            **scores,
+        })
+        matrix = confusion_matrix(y_test, predictions, labels=classes)
+        matrices[row.model] = matrix
+        errors.extend({
+            "model": row.model,
+            "actual_crop": classes[actual],
+            "predicted_crop": classes[predicted],
+            "count": matrix[actual, predicted],
+        } for actual, predicted in zip(*np.nonzero(matrix)) if actual != predicted)
 
-    if not results:
-        print("❌ Không có mô hình nào. Hãy train trước.")
-        return
+        if row.model == winner:
+            final_importance = feature_importance_table(model, X_test, y_test)
 
-    # Vẽ biểu đồ
-    print("\n--- TẠO BIỂU ĐỒ ---")
-    plot_confusion_matrices(results, classes, y_test)
-    plot_normalized_confusion_matrices(results, classes, y_test)
-    plot_metrics_comparison(results)
+    reference = MODEL_BUILDERS[winner]().fit(X_train, y_train)
+    validation_importance = feature_importance_table(reference, X_val, y_val)
+    importance = pd.concat([
+        validation_importance.assign(source="validation_reference"),
+        final_importance.assign(source="test_tuned"),
+    ], ignore_index=True).assign(model=winner)
 
-    # Bảng tổng kết
-    print_summary_table(results)
+    summary = pd.DataFrame(rows)
+    confusion_pairs = pd.DataFrame(
+        errors, columns=["model", "actual_crop", "predicted_crop", "count"]
+    ).sort_values(
+        ["count", "model", "actual_crop", "predicted_crop"],
+        ascending=[False, True, True, True],
+    )
+    summary.to_csv(RESULTS_DIR / "final_test_metrics.csv", index=False)
+    confusion_pairs.to_csv(RESULTS_DIR / "final_confusion_pairs.csv", index=False)
+    importance.to_csv(RESULTS_DIR / "final_permutation_importance.csv", index=False)
 
-    print(f"\n📁 Tất cả biểu đồ đã lưu tại: {FIGURES_DIR}")
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    plot_confusion_matrices(matrices, classes)
+    plot_confusion_matrices(matrices, classes, normalize=True)
+    plot_metrics(summary)
+
+    print(f"Test split: {len(y_test)} samples | {len(classes)} crops")
+    print(f"Selected by cross-validation: {winner}\n")
+    print(summary.to_string(index=False, float_format="{:.6f}".format))
+    print("\nConfusion pairs for the selected model")
+    print(confusion_pairs[confusion_pairs["model"] == winner].to_string(index=False))
+    print("\nPermutation importance for the selected model")
+    print(importance.to_string(index=False, float_format="{:.4f}".format))
 
 
 if __name__ == "__main__":
     main()
-
