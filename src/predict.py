@@ -2,7 +2,7 @@
 ==============================================================
   predict.py – Deployment script chính thức cho model tốt nhất
   Dự án: Crop Recommendation System
-  Model: Random Forest (~98.79% accuracy trên tập Test)
+  Model: Pipeline được chọn theo F1 macro của cross-validation
 ==============================================================
 Cấu trúc:
   1. load_best_model()       – Load model từ file .joblib
@@ -22,11 +22,11 @@ import os
 # Thêm thư mục src vào Python path để import config
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import joblib
 import numpy as np
 import pandas as pd
 
-from config import BASE_DIR, FEATURES
+from config import BASE_DIR, BEST_MODEL_PATH, FEATURES
+from model_artifact import load_best_model as load_selected_pipeline
 
 # ==============================================================
 # Hằng số – Range vật lý hợp lệ của từng feature
@@ -42,7 +42,7 @@ FEATURE_RANGES = {
 }
 
 # Đường dẫn model mặc định
-MODEL_PATH = BASE_DIR / "models" / "random_forest_model.joblib"
+MODEL_PATH = BEST_MODEL_PATH
 
 
 # ==============================================================
@@ -50,27 +50,21 @@ MODEL_PATH = BASE_DIR / "models" / "random_forest_model.joblib"
 # ==============================================================
 def load_best_model():
     """
-    Load model Random Forest tốt nhất từ file .joblib.
+    Load pipeline được chọn qua CV từ file .joblib dùng chung với đánh giá.
 
     Returns
     -------
     model : sklearn Pipeline
         Pipeline đã được huấn luyện gồm:
-        CropFeatureEngineer → ColumnTransformer(Imputer+Scaler) → RandomForestClassifier
+        CropFeatureEngineer → ColumnTransformer(Imputer+Scaler) → classifier được chọn
 
     Raises
     ------
     FileNotFoundError
         Nếu file model không tồn tại.
     """
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(
-            f"Không tìm thấy file model tại: {MODEL_PATH}\n"
-            "Hãy chạy train_random_forest.py trước."
-        )
-
     print(f"[Model] Đang load model từ: {MODEL_PATH}")
-    model = joblib.load(MODEL_PATH)
+    model = load_selected_pipeline()
     print("[Model] Load thành công! ✅")
     return model
 
@@ -339,7 +333,6 @@ def main():
     """
     print("=" * 55)
     print("  CROP RECOMMENDATION – DEPLOYMENT DEMO")
-    print("  Model: Random Forest (~98.79% Test Accuracy)")
     print("=" * 55)
 
     # ----------------------------------------------------------
@@ -350,6 +343,7 @@ def main():
     except FileNotFoundError as e:
         print(f"\n[LỖI] {e}")
         sys.exit(1)
+    print(f"  Model CV: {model.selected_model_name_}")
 
     # ----------------------------------------------------------
     # Phần 1: Dự đoán 3 preset mẫu
@@ -458,7 +452,7 @@ def main():
             # Lưu kết quả batch
             results_dir = BASE_DIR / "results"
             results_dir.mkdir(parents=True, exist_ok=True)
-            output_path = results_dir / "test_predictions_rf.csv"
+            output_path = results_dir / "demo_test_predictions.csv"
 
             df_out = X_test.copy()
             df_out["label"]          = y_test_list

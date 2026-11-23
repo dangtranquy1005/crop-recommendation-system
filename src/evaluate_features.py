@@ -9,6 +9,7 @@ from train_logistic_regression import build_logistic_model
 from train_qda import build_qda_model, load_training_data
 from train_random_forest import build_random_forest_model
 from trainlda import build_model as build_lda_model
+from train_knn import build_knn_model
 
 
 MODEL_BUILDERS = {
@@ -16,6 +17,7 @@ MODEL_BUILDERS = {
     "LDA": build_lda_model,
     "QDA": build_qda_model,
     "Random Forest": build_random_forest_model,
+    "k-NN": build_knn_model,
 }
 
 

@@ -5,8 +5,17 @@ LDA,maize,cotton,2
 LDA,rice,jute,2
 Logistic Regression,rice,jute,2
 QDA,rice,jute,2
+k-NN,mothbeans,lentil,2
+k-NN,mothbeans,mango,2
+k-NN,pigeonpeas,kidneybeans,2
 LDA,pigeonpeas,blackgram,1
 LDA,pigeonpeas,kidneybeans,1
+Logistic Regression,jute,rice,1
 Logistic Regression,maize,cotton,1
 QDA,maize,cotton,1
 Random Forest,rice,jute,1
+k-NN,lentil,blackgram,1
+k-NN,lentil,mothbeans,1
+k-NN,maize,cotton,1
+k-NN,muskmelon,watermelon,1
+k-NN,rice,jute,1

@@ -16,13 +16,9 @@ Cấu trúc:
 # ==============================================================
 # 1. Import thư viện
 # ==============================================================
-import warnings
-warnings.filterwarnings("ignore")
-
 import sys
 import os
 
-import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -38,18 +34,17 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
     roc_curve,
-    auc,
 )
 from sklearn.preprocessing import label_binarize
 
 # Thêm thư mục src vào sys.path để import config
 sys.path.insert(0, os.path.dirname(__file__))
 from config import BASE_DIR, FEATURES, PROCESSED_DATA_DIR
+from compare_models import fit_tuned_models, main as evaluate_final_models
 
 # ==============================================================
 # Cấu hình đường dẫn
 # ==============================================================
-MODELS_DIR  = BASE_DIR / "models"
 FIGURES_DIR = BASE_DIR / "figures"
 RESULTS_DIR = BASE_DIR / "results"
 
@@ -58,35 +53,12 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Tên các model và đường dẫn file tương ứng
-MODEL_FILES = {
-    "Logistic Regression": MODELS_DIR / "logistic_model.joblib",
-    "LDA":                 MODELS_DIR / "lda_model.joblib",
-    "QDA":                 MODELS_DIR / "qda_model.pkl",      # joblib load được .pkl
-    "Random Forest":       MODELS_DIR / "random_forest_model.joblib",
-    "k-NN":                MODELS_DIR / "knn_model.joblib",
-}
-
-
 # ==============================================================
 # 2. Load models & tập Test
 # ==============================================================
 def load_models():
-    """
-    Load tất cả models từ file .joblib / .pkl bằng joblib.
-    Trả về dict {tên_model: model_object}.
-    Bỏ qua model không tồn tại và in cảnh báo.
-    """
-    models = {}
-    for name, path in MODEL_FILES.items():
-        if not path.exists():
-            print(f"[CẢNH BÁO] Không tìm thấy file model: {path}. Bỏ qua {name}.")
-            continue
-        try:
-            model = joblib.load(path)
-            models[name] = model
-            print(f"[Load] {name:25s} ← {path.name}")
-        except Exception as e:
-            print(f"[LỖI] Không load được {name}: {e}")
+    """Refit the five tuned configurations using the shared evaluation workflow."""
+    _, models = fit_tuned_models()
     return models
 
 
@@ -142,6 +114,10 @@ def compute_metrics(model, X, y, model_name):
         "F1 (weighted)":       f1_score(y, y_pred, average="weighted", zero_division=0),
         "Cohen's Kappa":       cohen_kappa_score(y, y_pred),
         "MCC":                 matthews_corrcoef(y, y_pred),
+        "ROC-AUC (macro OvR)": roc_auc_score(
+            y, model.predict_proba(X), labels=model.classes_,
+            multi_class="ovr", average="macro",
+        ),
         # Lưu y_pred để dùng lại (không lưu vào CSV)
         "_y_pred":             y_pred,
     }
@@ -169,16 +145,12 @@ def compare_all_models(models, X_test, y_test):
         "Precision (macro)", "Precision (weighted)",
         "Recall (macro)",    "Recall (weighted)",
         "F1 (macro)",        "F1 (weighted)",
-        "Cohen's Kappa",     "MCC",
+        "Cohen's Kappa",     "MCC", "ROC-AUC (macro OvR)",
     ]
     df = pd.DataFrame(all_metrics)[display_cols]
 
-    # Làm tròn 4 chữ số thập phân để dễ đọc
-    numeric_cols = display_cols[1:]
-    df[numeric_cols] = df[numeric_cols].round(4)
-
     # In bảng đẹp
-    print(df.to_string(index=False))
+    print(df.to_string(index=False, float_format="{:.6f}".format))
 
     # Lưu CSV
     csv_path = RESULTS_DIR / "model_comparison_full.csv"
@@ -207,12 +179,14 @@ def plot_roc_all_models(models, X_test, y_test):
     y_bin = label_binarize(y_test, classes=classes)   # shape (n_samples, n_classes)
 
     # Màu sắc cho các model
-    colors = ["#E63946", "#2196F3", "#4CAF50", "#FF9800"]
+    colors = ["#E63946", "#2196F3", "#4CAF50", "#FF9800", "#8E44AD"]
 
     fig, ax = plt.subplots(figsize=(10, 7))
 
     for idx, (name, model) in enumerate(models.items()):
         color = colors[idx % len(colors)]
+        if not np.array_equal(model.classes_, classes):
+            raise ValueError(f"Class order mismatch for {name}")
 
         # Thử lấy xác suất dự đoán
         try:
@@ -241,7 +215,10 @@ def plot_roc_all_models(models, X_test, y_test):
                 mean_tpr += np.interp(all_fpr, fpr_dict[i], tpr_dict[i])
             mean_tpr /= n_classes
 
-            macro_auc = auc(all_fpr, mean_tpr)
+            macro_auc = roc_auc_score(
+                y_test, y_score, labels=model.classes_,
+                multi_class="ovr", average="macro",
+            )
 
             ax.plot(all_fpr, mean_tpr, color=color, lw=2,
                     label=f"{name} (AUC = {macro_auc:.4f})")
@@ -300,11 +277,17 @@ def analyze_top_confusion_pairs(rf_model, X_test, y_test, top_n=10):
                         "Count":     int(count),
                     })
 
-    pairs_df = (pd.DataFrame(pairs)
+    pairs_df = (pd.DataFrame(pairs, columns=["Actual", "Predicted", "Count"])
                   .sort_values("Count", ascending=False)
                   .head(top_n)
                   .reset_index(drop=True))
     pairs_df.index += 1   # đánh số từ 1
+    pairs_df.to_csv(RESULTS_DIR / "top_confusion_pairs_rf.csv", index=False)
+    predictions = X_test.reset_index(drop=True).copy()
+    predictions["actual"] = np.asarray(y_test)
+    predictions["predicted"] = y_pred
+    predictions["correct"] = predictions["actual"] == predictions["predicted"]
+    predictions.to_csv(RESULTS_DIR / "test_predictions_rf.csv", index=False)
 
     # In bảng
     print("\n" + "=" * 55)
@@ -317,7 +300,9 @@ def analyze_top_confusion_pairs(rf_model, X_test, y_test, top_n=10):
               for _, r in pairs_df.iterrows()]
     counts = pairs_df["Count"].tolist()
 
-    fig, ax = plt.subplots(figsize=(12, 6))
+    fig, ax = plt.subplots(figsize=(10, max(3, 0.6 * len(counts) + 2)))
+    if pairs_df.empty:
+        ax.text(0.5, 0.5, "No misclassified samples", ha="center", transform=ax.transAxes)
     bars = ax.barh(labels[::-1], counts[::-1],
                    color=plt.cm.Reds(np.linspace(0.4, 0.85, len(counts))))
     for bar, cnt in zip(bars, counts[::-1]):
@@ -327,6 +312,8 @@ def analyze_top_confusion_pairs(rf_model, X_test, y_test, top_n=10):
     ax.set_title(f"Top {top_n} Cặp Nhầm Lẫn Nhiều Nhất – Random Forest (Test Set)",
                  fontsize=13, fontweight="bold", pad=10)
     ax.set_xlabel("Số lần nhầm lẫn", fontsize=11)
+    ax.set_xlim(0, max(counts, default=1) * 1.25)
+    ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
     ax.grid(axis="x", linestyle="--", alpha=0.5)
     plt.tight_layout()
     out = FIGURES_DIR / "top_confusion_pairs_rf.png"
@@ -362,8 +349,10 @@ def explain_rf_superiority(all_metrics, models, X_test, y_test):
     print("\n--- (a) So sánh Accuracy ---")
     for model_name, acc in acc_dict.items():
         diff = rf_acc - acc
-        sign = "↑" if diff > 0 else ("↓" if diff < 0 else "=")
-        print(f"  {model_name:25s}: {acc:.4f}  ({sign} {abs(diff):.4f} so với RF)")
+        print(
+            f"  {model_name:25s}: {acc:.4f}  "
+            f"(Accuracy RF trừ mô hình này: {diff:+.4f})"
+        )
 
     # (b) Feature Importance của RF
     print("\n--- (b) Feature Importance của Random Forest ---")
@@ -429,18 +418,16 @@ def explain_rf_superiority(all_metrics, models, X_test, y_test):
     else:
         print("  Không tìm thấy lớp nào RF vượt trội rõ rệt so với tất cả các model khác.")
 
-    # Tổng kết lý do vượt trội
-    print("\n--- Tổng kết lý do RF vượt trội ---")
-    print(
-        "  1. Random Forest là ensemble (bagging 300 cây quyết định) → giảm variance,\n"
-        "     học được ranh giới phi tuyến phức tạp.\n"
-        "  2. LDA/QDA giả định phân phối Gaussian → dễ sai với dữ liệu thực tế.\n"
-        "  3. Logistic Regression bị giới hạn bởi biên quyết định tuyến tính.\n"
-        "  4. RF dùng feature importance để tự chọn đặc trưng quan trọng nhất.\n"
-        "  5. class_weight='balanced' giúp RF xử lý tốt các lớp thiểu số.\n"
-        "  6. Với 7 features vật lý, RF nắm bắt được tương tác phi tuyến\n"
-        "     (N×K, nhiệt độ×độ ẩm, ...) – thứ mà LDA/Logistic bỏ lỡ."
-    )
+    print("\n--- Cấu hình Random Forest đã chốt qua CV ---")
+    params = rf_model.named_steps["classifier"].get_params()
+    for key in ("n_estimators", "max_depth", "min_samples_split", "min_samples_leaf"):
+        print(f"  {key}: {params[key]}")
+    print("\n--- Permutation importance trên tập test (F1 macro, 10 lần) ---")
+    importance = pd.read_csv(RESULTS_DIR / "final_permutation_importance.csv")
+    importance = importance[
+        (importance["source"] == "test_tuned") & (importance["model"] == "Random Forest")
+    ]
+    print(importance.to_string(index=False, float_format="{:.4f}".format))
 
 
 # ==============================================================
@@ -451,16 +438,8 @@ def main():
     print("  ĐÁNH GIÁ CHUYÊN SÂU & PHÂN TÍCH LỖI – CROP RECOMMENDATION")
     print("=" * 70)
 
-    # --- Bước 1: Load models & dữ liệu Test ---
-    print("\n[Bước 1] Load models...")
-    models = load_models()
-
-    if not models:
-        print("[LỖI] Không load được model nào. Hãy huấn luyện models trước.")
-        sys.exit(1)
-
-    print("\n[Bước 1] Load tập Test...")
-    X_test, y_test = load_test_data()
+    # Reuse the exact fitted instances for tables, matrices, ROC and error analysis.
+    models, X_test, y_test = evaluate_final_models()
 
     # --- Bước 2: Bảng so sánh đa chỉ số ---
     print("\n[Bước 2] Tính đa chỉ số cho tất cả models...")

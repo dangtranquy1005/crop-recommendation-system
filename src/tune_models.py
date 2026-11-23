@@ -13,7 +13,6 @@ Phương pháp:
 
 import json
 import warnings
-import joblib
 import pandas as pd
 from scipy.stats import randint
 
@@ -23,7 +22,8 @@ from sklearn.model_selection import (
     StratifiedKFold,
 )
 
-from config import BASE_DIR, RANDOM_STATE
+from config import BASE_DIR, BEST_MODEL_PATH, RANDOM_STATE
+from model_artifact import save_best_model
 from train_logistic_regression import build_logistic_model
 from trainlda import build_model as build_lda_model
 from train_qda import build_qda_model, load_training_data
@@ -74,7 +74,7 @@ def main():
                 "classifier__metric": ["euclidean", "manhattan", "minkowski"],
             },
         },
-        "Random Forest (RandomizedSearch)": {
+        "Random Forest": {
             "model": build_random_forest_model(),
             "type": "random",
             "n_iter": 12,
@@ -156,10 +156,9 @@ def main():
     print(f"\n[Kết quả] Đã lưu bảng kết quả vào: {output}")
 
     # Lưu best model tuned
-    best_model_path = BASE_DIR / "models" / "best_tuned_model.joblib"
-    joblib.dump(best_overall_model, best_model_path)
+    save_best_model(best_overall_model, best_overall_name)
     print(f"\n🏆 Mô hình tối ưu toàn diện nhất: {best_overall_name} (F1 = {best_overall_score:.4f})")
-    print(f"💾 Đã lưu mô hình tối ưu đã tune tại: {best_model_path}")
+    print(f"💾 Đã lưu mô hình tối ưu đã tune tại: {BEST_MODEL_PATH}")
 
 
 if __name__ == "__main__":

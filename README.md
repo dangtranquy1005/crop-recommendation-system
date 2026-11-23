@@ -5,7 +5,7 @@ DỰ ÁN GỢI Ý LOẠI CÂY TRỒNG DỰA TRÊN ĐIỀU KIỆN KHÍ HẬU VÀ 
 ---
 Đề tài của nhóm là xây dựng hệ thống gợi ý cây trồng dựa trên điều kiện đất và khí hậu. Dữ liệu đầu vào bao gồm 7 đặc trưng: N, P, K, nhiệt độ, độ ẩm, pH và lượng mưa. Đầu ra là loại cây trồng được mô hình dự đoán.
 
-Vì đầu ra là một trong nhiều loại cây trồng xác định nên đây là bài toán phân loại đa lớp. Nhóm so sánh bốn mô hình: Logistic Regression, LDA, QDA và Random Forest.
+Vì đầu ra là một trong nhiều loại cây trồng xác định nên đây là bài toán phân loại đa lớp. Nhóm so sánh năm mô hình: Logistic Regression, LDA, QDA, Random Forest và k-NN.
 
 
 DATASET : https://www.kaggle.com/datasets/atharvaingle/crop-recommendation-dataset?
@@ -43,6 +43,23 @@ python src/train_random_forest.py
 
 Khi dự đoán, vẫn nhập 7 thông số gốc như trước.
 
+## Pipeline dùng chung cho đánh giá và demo
+
+Mô hình được CV chọn được lưu tại `models/best_tuned_model.joblib`.
+`tune_models.py` xuất pipeline sau khi refit trên train + validation.
+`compare_models.py` cũng có thể tái tạo tệp này từ CSV tuning hiện có và
+đánh giá chính pipeline đã lưu rồi nạp lại.
+`predict.py` dùng cùng tệp để dự đoán đơn lẻ, CSV và chạy demo.
+
+```powershell
+python src/compare_models.py
+python src/predict.py
+```
+
+Kết quả batch của demo được lưu tại `results/demo_test_predictions.csv`.
+Khi đóng gói nộp bài, đưa cả `best_tuned_model.joblib` và mã nguồn trong
+`src/` vào gói vì pipeline cần lớp `CropFeatureEngineer` khi nạp lại.
+
 ## Kiểm định chéo và tinh chỉnh siêu tham số
 
 ```powershell
@@ -51,8 +68,9 @@ python src/tune_models.py
 ```
 
 `tune_models.py` gộp train và validation thành tập phát triển, rồi dùng cùng
-5 fold phân tầng để chạy `GridSearchCV` cho Logistic Regression, LDA, QDA và
-Random Forest. Mỗi ứng viên fit toàn bộ pipeline trong từng fold. Tập test
+5 fold phân tầng để chạy `GridSearchCV` cho Logistic Regression, LDA, QDA,
+k-NN và `RandomizedSearchCV` cho Random Forest. Mỗi ứng viên fit toàn bộ
+pipeline trong từng fold. Tập test
 được giữ riêng cho đánh giá cuối. Kết quả được xếp theo F1 macro trung bình và
 lưu tại `results/cv_tuning_summary.csv`, cùng độ lệch chuẩn, điểm từng fold và
 bộ tham số tốt nhất của từng mô hình.
@@ -61,14 +79,24 @@ bộ tham số tốt nhất của từng mô hình.
 
 ```powershell
 python src/compare_models.py
+python src/error_analysis.py
 ```
 
 Script đọc tham số đã chốt trong `results/cv_tuning_summary.csv`, huấn luyện
-lại bốn pipeline trên toàn bộ tập phát triển và đánh giá trên tập test.
+lại năm pipeline trên toàn bộ tập phát triển và đánh giá trên tập test.
 Mô hình được chọn theo F1 macro của CV. ROC-AUC đa lớp dùng xác suất dự đoán,
 tính theo one-vs-rest và lấy trung bình macro.
 
-- `results/final_test_metrics.csv` lưu các chỉ số của bốn mô hình.
+`error_analysis.py` chạy lại cùng luồng đánh giá và dùng chính các pipeline
+đã refit từ CSV tuning để tạo bảng đa chỉ số, đường ROC và phân tích lỗi.
+`results/final_test_metrics.csv` ghi cả tham số đã dùng để đối chiếu với
+`results/cv_tuning_summary.csv`. Kết quả phân tích chi tiết có thể lưu bằng:
+
+```powershell
+python src/error_analysis.py > results/final_evaluation.txt
+```
+
+- `results/final_test_metrics.csv` lưu các chỉ số của năm mô hình.
 - `results/final_confusion_pairs.csv` lưu từng cặp nhầm theo chiều nhãn thực → nhãn dự đoán.
 - `results/final_permutation_importance.csv` lưu mức giảm F1 macro khi xáo
   trộn từng cột gốc, lặp 10 lần. `validation_reference` dùng mô hình mặc định

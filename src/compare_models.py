@@ -18,6 +18,7 @@ from sklearn.metrics import (
 from config import BASE_DIR, FEATURES, PROCESSED_DATA_DIR, TARGET
 from evaluate_features import MODEL_BUILDERS, feature_importance_table
 from train_qda import load_training_data
+from model_artifact import save_best_model
 
 RESULTS_DIR = BASE_DIR / "results"
 FIGURES_DIR = BASE_DIR / "figures"
@@ -43,7 +44,10 @@ def compute_metrics(y, predictions, probabilities, classes):
 
 
 def plot_confusion_matrices(matrices, classes, *, normalize=False):
-    fig, axes = plt.subplots(2, 2, figsize=(18, 15), layout="constrained")
+    n_rows = (len(matrices) + 1) // 2
+    fig, axes = plt.subplots(
+        n_rows, 2, figsize=(18, 7.5 * n_rows), layout="constrained", squeeze=False,
+    )
     description = "Row-normalized (%)" if normalize else "Counts"
     fig.suptitle(f"Test confusion matrices | {description}", fontsize=17)
 
@@ -62,6 +66,9 @@ def plot_confusion_matrices(matrices, classes, *, normalize=False):
         ax.tick_params(axis="x", labelrotation=60, labelsize=8)
         ax.tick_params(axis="y", labelrotation=0, labelsize=8)
 
+    for ax in axes.flat[len(matrices):]:
+        ax.set_visible(False)
+
     suffix = "_normalized" if normalize else ""
     fig.savefig(FIGURES_DIR / f"final_confusion_matrices{suffix}.png", dpi=150)
     plt.close(fig)
@@ -69,7 +76,9 @@ def plot_confusion_matrices(matrices, classes, *, normalize=False):
 
 def plot_metrics(summary):
     scores = summary.set_index("model")[list(METRICS)].rename(columns=METRICS)
-    fig, ax = plt.subplots(figsize=(11, 4), layout="constrained")
+    fig, ax = plt.subplots(
+        figsize=(11, max(4, len(summary) * 0.8)), layout="constrained",
+    )
     sns.heatmap(scores, annot=True, fmt=".4f", cmap="Blues", vmax=1, ax=ax)
     ax.set(title="Test metrics by model", xlabel="", ylabel="")
     ax.tick_params(axis="y", labelrotation=0)
@@ -77,32 +86,51 @@ def plot_metrics(summary):
     plt.close(fig)
 
 
-def main():
+def fit_tuned_models():
+    """Refit the configurations in the CV summary on train plus validation."""
     cv_summary = pd.read_csv(RESULTS_DIR / "cv_tuning_summary.csv")
+    # Accept CSVs written before the search method had its own column.
+    cv_summary["model"] = cv_summary["model"].replace({
+        "Random Forest (RandomizedSearch)": "Random Forest",
+    })
     if len(cv_summary) != len(MODEL_BUILDERS) or set(cv_summary["model"]) != set(MODEL_BUILDERS):
-        raise ValueError("The CV summary must contain all four models. Run src/tune_models.py.")
+        expected = ", ".join(MODEL_BUILDERS)
+        raise ValueError(
+            f"The CV summary must contain each model exactly once: {expected}. "
+            "Run src/tune_models.py."
+        )
     cv_summary = cv_summary.sort_values("mean_cv_f1_macro", ascending=False, kind="stable")
-    winner = cv_summary.iloc[0]["model"]
-
     X_train, X_val, y_train, y_val = load_training_data()
     X_dev = pd.concat([X_train, X_val], ignore_index=True)
     y_dev = pd.concat([y_train, y_val], ignore_index=True)
+    models = {}
+    for row in cv_summary.itertuples(index=False):
+        model = MODEL_BUILDERS[row.model]().set_params(**json.loads(row.best_params))
+        models[row.model] = model.fit(X_dev, y_dev)
+    winner = cv_summary.iloc[0]["model"]
+    models[winner] = save_best_model(models[winner], winner)
+    return cv_summary, models
+
+
+def main():
+    cv_summary, models = fit_tuned_models()
+    winner = cv_summary.iloc[0]["model"]
     X_test = pd.read_csv(PROCESSED_DATA_DIR / "X_test.csv")[FEATURES]
     y_test = pd.read_csv(PROCESSED_DATA_DIR / "y_test.csv")[TARGET]
-    classes = np.unique(y_dev)
+    classes = models[winner].classes_
 
     rows = []
     matrices = {}
     errors = []
     for row in cv_summary.itertuples(index=False):
-        model = MODEL_BUILDERS[row.model]().set_params(**json.loads(row.best_params))
-        model.fit(X_dev, y_dev)
+        model = models[row.model]
         predictions = model.predict(X_test)
         scores = compute_metrics(y_test, predictions, model.predict_proba(X_test), model.classes_)
         rows.append({
             "model": row.model,
             "selected_by_cv": row.model == winner,
             "mean_cv_f1_macro": row.mean_cv_f1_macro,
+            "best_params": row.best_params,
             **scores,
         })
         matrix = confusion_matrix(y_test, predictions, labels=classes)
@@ -117,6 +145,7 @@ def main():
         if row.model == winner:
             final_importance = feature_importance_table(model, X_test, y_test)
 
+    X_train, X_val, y_train, y_val = load_training_data()
     reference = MODEL_BUILDERS[winner]().fit(X_train, y_train)
     validation_importance = feature_importance_table(reference, X_val, y_val)
     importance = pd.concat([
@@ -147,6 +176,7 @@ def main():
     print(confusion_pairs[confusion_pairs["model"] == winner].to_string(index=False))
     print("\nPermutation importance for the selected model")
     print(importance.to_string(index=False, float_format="{:.4f}".format))
+    return models, X_test, y_test
 
 
 if __name__ == "__main__":

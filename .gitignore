@@ -17,6 +17,7 @@ data/processed/
 
 # Trained models
 models/*.joblib
+!models/best_tuned_model.joblib
 
 # Environment files
 .env

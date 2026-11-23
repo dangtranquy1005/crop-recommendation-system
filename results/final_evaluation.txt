@@ -1,0 +1,122 @@
+======================================================================
+  ĐÁNH GIÁ CHUYÊN SÂU & PHÂN TÍCH LỖI – CROP RECOMMENDATION
+======================================================================
+Test split: 330 samples | 22 crops
+Selected by cross-validation: Random Forest
+
+              model  selected_by_cv  mean_cv_f1_macro                                                                                                                                                               best_params  accuracy  precision_macro  recall_macro  f1_macro  roc_auc_ovr_macro
+      Random Forest            True          0.995177 {"classifier__max_depth": 25, "classifier__max_features": "sqrt", "classifier__min_samples_leaf": 1, "classifier__min_samples_split": 6, "classifier__n_estimators": 158}  0.996970         0.997159      0.996970  0.996966           1.000000
+                QDA           False          0.990899                                                                                                                                           {"classifier__reg_param": 0.01}  0.990909         0.991811      0.990909  0.990879           1.000000
+Logistic Regression           False          0.980629                                                                                                                                                   {"classifier__C": 50.0}  0.987879         0.988231      0.987879  0.987865           0.999942
+               k-NN           False          0.970159                                                                      {"classifier__metric": "manhattan", "classifier__n_neighbors": 5, "classifier__weights": "distance"}  0.966667         0.968093      0.966667  0.966026           0.996652
+                LDA           False          0.966677                                                                                                             {"classifier__shrinkage": 0.01, "classifier__solver": "lsqr"}  0.966667         0.968850      0.966667  0.966689           0.999750
+
+Confusion pairs for the selected model
+        model actual_crop predicted_crop  count
+Random Forest        rice           jute      1
+
+Permutation importance for the selected model
+    feature  mean_f1_drop  std_f1_drop               source         model
+          N        0.3434       0.0159 validation_reference Random Forest
+          K        0.2659       0.0351 validation_reference Random Forest
+   humidity        0.2336       0.0168 validation_reference Random Forest
+          P        0.1757       0.0191 validation_reference Random Forest
+   rainfall        0.1752       0.0116 validation_reference Random Forest
+         ph        0.0108       0.0053 validation_reference Random Forest
+temperature        0.0071       0.0041 validation_reference Random Forest
+          N        0.3304       0.0165           test_tuned Random Forest
+          K        0.2913       0.0157           test_tuned Random Forest
+   humidity        0.2861       0.0125           test_tuned Random Forest
+   rainfall        0.1727       0.0108           test_tuned Random Forest
+          P        0.1644       0.0135           test_tuned Random Forest
+         ph        0.0178       0.0051           test_tuned Random Forest
+temperature        0.0068       0.0039           test_tuned Random Forest
+
+[Bước 2] Tính đa chỉ số cho tất cả models...
+
+======================================================================
+  SO SÁNH ĐA CHỈ SỐ – TẤT CẢ MODELS (Test Set)
+======================================================================
+              Model  Accuracy  Precision (macro)  Precision (weighted)  Recall (macro)  Recall (weighted)  F1 (macro)  F1 (weighted)  Cohen's Kappa      MCC  ROC-AUC (macro OvR)
+      Random Forest  0.996970           0.997159              0.997159        0.996970           0.996970    0.996966       0.996966       0.996825 0.996835             1.000000
+                QDA  0.990909           0.991811              0.991811        0.990909           0.990909    0.990879       0.990879       0.990476 0.990524             1.000000
+Logistic Regression  0.987879           0.988231              0.988231        0.987879           0.987879    0.987865       0.987865       0.987302 0.987321             0.999942
+               k-NN  0.966667           0.968093              0.968093        0.966667           0.966667    0.966026       0.966026       0.965079 0.965209             0.996652
+                LDA  0.966667           0.968850              0.968850        0.966667           0.966667    0.966689       0.966689       0.965079 0.965182             0.999750
+
+[Kết quả] Đã lưu bảng so sánh → D:\ML\wsplant\results\model_comparison_full.csv
+
+[Bước 3] Vẽ ROC Curve (macro OvR)...
+
+[Biểu đồ] ROC Curve (tất cả models) → D:\ML\wsplant\figures\roc_curve_all_models.png
+
+[Bước 4] Phân tích cặp nhầm lẫn nhiều nhất (RF)...
+
+=======================================================
+  TOP 10 CẶP NHẦM LẪN NHIỀU NHẤT – RANDOM FOREST
+=======================================================
+  Actual Predicted  Count
+1   rice      jute      1
+
+[Biểu đồ] Top confusion pairs (RF) → D:\ML\wsplant\figures\top_confusion_pairs_rf.png
+
+[Bước 5] Giải thích tại sao RF vượt trội...
+
+=================================================================
+  PHÂN TÍCH: TẠI SAO RANDOM FOREST VƯỢT TRỘI?
+=================================================================
+
+--- (a) So sánh Accuracy ---
+  Random Forest            : 0.9970  (Accuracy RF trừ mô hình này: +0.0000)
+  QDA                      : 0.9909  (Accuracy RF trừ mô hình này: +0.0061)
+  Logistic Regression      : 0.9879  (Accuracy RF trừ mô hình này: +0.0091)
+  k-NN                     : 0.9667  (Accuracy RF trừ mô hình này: +0.0303)
+  LDA                      : 0.9667  (Accuracy RF trừ mô hình này: +0.0303)
+
+--- (b) Feature Importance của Random Forest ---
+   1. rainfall                           : 0.1958  █████████
+   2. humidity                           : 0.1907  █████████
+   3. K                                  : 0.1484  ███████
+   4. P                                  : 0.1018  █████
+   5. total_npk                          : 0.0947  ████
+   6. N                                  : 0.0620  ███
+   7. temperature                        : 0.0560  ██
+   8. nk_ratio                           : 0.0514  ██
+   9. np_ratio                           : 0.0434  ██
+  10. ph_distance_7                      : 0.0290  █
+  11. ph                                 : 0.0268  █
+
+--- (c) Lớp mà RF đúng, các model khác sai ---
+  Lớp cây trồng        | Số mẫu RF đúng – model khác sai              
+  --------------------------------------------------------------------
+  maize                | QDA: 1  Logistic Regression: 1  k-NN: 1  LDA: 2
+  lentil               | k-NN: 2  LDA: 2
+  mothbeans            | k-NN: 4
+  pigeonpeas           | k-NN: 2  LDA: 2
+  rice                 | QDA: 1  Logistic Regression: 1  LDA: 1
+  blackgram            | LDA: 3
+  jute                 | Logistic Regression: 1
+  muskmelon            | k-NN: 1
+
+--- Cấu hình Random Forest đã chốt qua CV ---
+  n_estimators: 158
+  max_depth: 25
+  min_samples_split: 6
+  min_samples_leaf: 1
+
+--- Permutation importance trên tập test (F1 macro, 10 lần) ---
+    feature  mean_f1_drop  std_f1_drop     source         model
+          N        0.3304       0.0165 test_tuned Random Forest
+          K        0.2913       0.0157 test_tuned Random Forest
+   humidity        0.2861       0.0125 test_tuned Random Forest
+   rainfall        0.1727       0.0108 test_tuned Random Forest
+          P        0.1644       0.0135 test_tuned Random Forest
+         ph        0.0178       0.0051 test_tuned Random Forest
+temperature        0.0068       0.0039 test_tuned Random Forest
+
+======================================================================
+  HOÀN TẤT PHÂN TÍCH LỖI
+======================================================================
+  Kết quả CSV → D:\ML\wsplant\results\model_comparison_full.csv
+  Biểu đồ    → D:\ML\wsplant\figures
+======================================================================

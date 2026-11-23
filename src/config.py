@@ -26,3 +26,5 @@ FEATURES = [
 TARGET = "label"
 
 RANDOM_STATE = 42
+
+BEST_MODEL_PATH = BASE_DIR / "models" / "best_tuned_model.joblib"
