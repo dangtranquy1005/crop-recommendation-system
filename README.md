@@ -67,3 +67,29 @@ bộ tham số tốt nhất của từng mô hình.
    - b3: cài thư viện : python -m pip install -r requirements.txt
      có thể kiểm tra bằng lệnh : python -m pip list
 
+## Khởi chạy giao diện người dùng (Streamlit Web App)
+
+Để trải nghiệm giao diện phân tích và khuyến nghị:
+
+Cách 1 (Khuyên dùng trên Windows Terminal / PowerShell):
+```powershell
+python -m streamlit run app.py
+```
+Hoặc chạy trực tiếp file script:
+```powershell
+.\run_app.bat
+```
+
+Cách 2 (Nếu môi trường đã nhận biến PATH toàn cục):
+```powershell
+streamlit run app.py
+```
+
+Ứng dụng sẽ tự động mở trên trình duyệt tại địa chỉ `http://localhost:8501`.
+Giao diện bao gồm 4 chức năng chính:
+1. **Dự đoán cá thể**: Nhập thông số thổ nhưỡng & khí hậu hoặc chọn mẫu tham chiếu vùng sinh thái, nhận ngay khuyến nghị cây trồng tối ưu kèm độ tin cậy và phân phối xác suất Top 3.
+2. **Xử lý dữ liệu theo lô (CSV)**: Tải lên danh sách mẫu để phân loại hàng loạt và xuất tệp kết quả.
+3. **Phân tích dữ liệu gốc (EDA)**: Ma trận tương quan Pearson, nhận diện điểm ngoại lai và phân phối mật độ xác suất.
+4. **Đánh giá & Hiệu năng mô hình**: Bảng đối chiếu đa chỉ số thực nghiệm và các biểu đồ chuyên sâu (Đường cong ROC, Ma trận nhầm lẫn, Feature Importance).
+
+
